@@ -32,9 +32,19 @@ SEC_BASE_URL = "https://www.sec.gov"
 SEC_USER_AGENT = "SmartMoneyAlerts contact@smartmoneyalerts.com"  # SEC requires identification
 
 # === SCRAPING SETTINGS ===
-SCRAPE_INTERVAL_MINUTES = 10
-MIN_TRANSACTION_VALUE = 50000  # Minimum $ to track
-MAX_POSTS_PER_HOUR = 10  # Don't spam Twitter
+SCRAPE_INTERVAL_MINUTES = 5  # Check every 5 minutes for fresh data
+MIN_TRANSACTION_VALUE = 10000  # Minimum $ to track (lowered for more coverage)
+MAX_POSTS_PER_HOUR = 15  # Increased for more activity
+
+# === SCRAPING LIMITS ===
+MAX_FORM4_FILINGS = 100  # SEC RSS returns max 100
+MAX_CONGRESS_TRADES = 200  # Get more congressional trades
+MAX_13F_FILINGS = 100  # SEC RSS returns max 100
+
+# === TRANSACTION FILTERS ===
+TRACK_PURCHASES = True  # Track insider buys
+TRACK_SALES = True  # Track insider sales (can indicate problems)
+TRACK_AWARDS = False  # Stock awards (less meaningful)
 
 # === VIRALITY THRESHOLDS ===
 TIER1_SCORE = 70  # Post immediately with full promotion

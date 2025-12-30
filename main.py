@@ -25,7 +25,10 @@ from core.scorer import score_and_tier, get_tier_description
 from core.formatter import tweet_formatter
 from bots.twitter_bot import twitter_bot
 from bots.discord_bot import discord_poster, post_to_discord_sync
-from config.settings import SCRAPE_INTERVAL_MINUTES, DRY_RUN
+from config.settings import (
+    SCRAPE_INTERVAL_MINUTES, DRY_RUN,
+    MAX_FORM4_FILINGS, MAX_CONGRESS_TRADES, MAX_13F_FILINGS
+)
 
 # Try to import schedule
 try:
@@ -63,7 +66,7 @@ def scrape_and_process() -> dict:
     # === SCRAPE SEC FORM 4 (Insider Trades) ===
     if SCRAPE_INSIDER_TRADES:
         logger.info("\n--- Scraping SEC Form 4 (Insider Trades) ---")
-        trades = form4_scraper.scrape_recent_filings(max_filings=50)
+        trades = form4_scraper.scrape_recent_filings(max_filings=MAX_FORM4_FILINGS)
         logger.info(f"Scraped {len(trades)} insider trades from SEC")
 
         for trade in trades:
@@ -88,7 +91,7 @@ def scrape_and_process() -> dict:
     if SCRAPE_CONGRESS_TRADES:
         logger.info("\n--- Scraping Congressional Trades ---")
         try:
-            congress_trades = scrape_congress_trades(max_trades=50)
+            congress_trades = scrape_congress_trades(max_trades=MAX_CONGRESS_TRADES)
             logger.info(f"Scraped {len(congress_trades)} congressional trades")
 
             for trade in congress_trades:
@@ -111,7 +114,7 @@ def scrape_and_process() -> dict:
     if SCRAPE_HEDGE_FUNDS:
         logger.info("\n--- Scraping Hedge Fund 13F Filings ---")
         try:
-            filings = scrape_hedge_fund_filings(max_filings=20)
+            filings = scrape_hedge_fund_filings(max_filings=MAX_13F_FILINGS)
             logger.info(f"Scraped {len(filings)} 13F filings")
 
             for filing in filings:

@@ -18,11 +18,11 @@ import sys
 
 # Handle imports for both module and direct execution
 try:
-    from config.settings import SEC_BASE_URL, SEC_USER_AGENT, MIN_TRANSACTION_VALUE
+    from config.settings import SEC_BASE_URL, SEC_USER_AGENT, MIN_TRANSACTION_VALUE, TRACK_PURCHASES, TRACK_SALES, TRACK_AWARDS
     from config.tickers import COMPANY_ALIASES
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from config.settings import SEC_BASE_URL, SEC_USER_AGENT, MIN_TRANSACTION_VALUE
+    from config.settings import SEC_BASE_URL, SEC_USER_AGENT, MIN_TRANSACTION_VALUE, TRACK_PURCHASES, TRACK_SALES, TRACK_AWARDS
     from config.tickers import COMPANY_ALIASES
 
 
@@ -233,7 +233,15 @@ class SECForm4Scraper:
                     if code:
                         transaction_type = code
 
-                # Skip if not a purchase (P) - we're mainly interested in buys
+                # Filter based on transaction type and settings
+                # P = Purchase, S = Sale, A = Award/Grant, M = Exercise
+                if transaction_type == 'P' and not TRACK_PURCHASES:
+                    continue
+                if transaction_type == 'S' and not TRACK_SALES:
+                    continue
+                if transaction_type == 'A' and not TRACK_AWARDS:
+                    continue
+                # Skip unknown transaction types
                 if transaction_type not in ('P', 'S', 'A', 'M'):
                     continue
 
