@@ -103,30 +103,58 @@ When multiple insiders buy together, pay attention 📈
 # === CONGRESS TRADING TEMPLATES (Phase 2) ===
 
 CONGRESS_TIER1_TEMPLATES = [
-    """🏛️ CONGRESS TRADING ALERT
+    """🏛️ CONGRESS TRADE ALERT
 
-{politician_name} ({party}) just {action} ${ticker}
+{politician_name} ({party}-{state}) just {action} ${ticker}
 
-💰 Value: {value_range}
-📅 Trade Date: {trade_date}
+💰 Amount: {value_range}
+📅 Trade: {trade_date}
 📅 Disclosed: {disclosure_date}
 
-{context_text}
+{anomaly_text}
 
-{suspicious_text}
+Do they know something? 🤔
 
 {tags}""",
 
-    """🚨 POLITICIAN TRADE: {politician_name}
+    """🚨 POLITICIAN STOCK TRADE
 
-{action} ${ticker}
+{politician_name} {action} ${ticker}
+
 Amount: {value_range}
+Chamber: {chamber}
 
-{context_text}
+{anomaly_text}
 
-Insider knowledge or lucky timing? 🤔
+#CongressTrading #STOCKAct
 
 {tags}""",
+]
+
+CONGRESS_TIER2_TEMPLATES = [
+    """🏛️ {politician_name} ({party}) {action} ${ticker}
+
+Amount: {value_range}
+Date: {trade_date}
+
+{anomaly_text}
+
+#CongressTrading""",
+
+    """📊 Congress Trade: ${ticker}
+
+{politician_name} ({party}-{state})
+{action}: {value_range}
+
+{anomaly_text}
+
+#STOCKAct""",
+]
+
+CONGRESS_TIER3_TEMPLATES = [
+    """🏛️ ${ticker}: {politician_name} ({party}) {action} {value_range}
+
+#CongressTrading""",
 ]
 
 CONGRESS_AGGREGATE_TEMPLATE = """📊 What is Congress buying this month?
@@ -144,25 +172,47 @@ Full data: {link}
 # === HEDGE FUND 13F TEMPLATES (Phase 3) ===
 
 HEDGE_FUND_TIER1_TEMPLATES = [
-    """🚨 {manager_name} JUST FILED 13F
+    """🚨 {manager_name} 13F FILING
 
-{fund_name} Q{quarter} moves:
+{fund_name} just disclosed Q{quarter} holdings:
 
-🆕 NEW POSITIONS:
-{new_positions}
+💼 Portfolio: ${total_value}
+📊 Positions: {position_count}
 
-📈 ADDED TO:
-{increased_positions}
-
-📉 REDUCED:
-{decreased_positions}
-
-❌ SOLD:
-{exited_positions}
+Top Holdings:
+{top_holdings_text}
 
 What's {manager_name} seeing? 🧐
 
 {tags}""",
+
+    """📈 HEDGE FUND ALERT: {manager_name}
+
+{fund_name} Q{quarter} 13F just dropped
+
+${total_value} portfolio across {position_count} positions
+
+{anomaly_text}
+
+{tags}""",
+]
+
+HEDGE_FUND_TIER2_TEMPLATES = [
+    """📊 13F Filing: {fund_name}
+
+Manager: {manager_name}
+Portfolio: ${total_value}
+Positions: {position_count}
+
+{anomaly_text}
+
+#13F #HedgeFund""",
+]
+
+HEDGE_FUND_TIER3_TEMPLATES = [
+    """📈 {fund_name} filed 13F: ${total_value} across {position_count} positions
+
+#13F""",
 ]
 
 # === ANOMALY TEXT SNIPPETS ===

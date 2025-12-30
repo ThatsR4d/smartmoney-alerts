@@ -18,8 +18,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.database import init_db, insert_insider_trade, get_unposted_trades, get_stats_summary
 from scrapers.sec_form4 import SECForm4Scraper
+from scrapers.congress import scrape_congress_trades
+from scrapers.hedge_funds import scrape_hedge_fund_filings
 from core.analyzer import analyze_trade
 from core.scorer import score_and_tier, get_tier_description
+from core.formatter import tweet_formatter
 from bots.twitter_bot import twitter_bot
 from bots.discord_bot import discord_poster, post_to_discord_sync
 from config.settings import SCRAPE_INTERVAL_MINUTES, DRY_RUN
@@ -40,39 +43,135 @@ logger = logging.getLogger(__name__)
 # Scrapers
 form4_scraper = SECForm4Scraper()
 
+# Feature flags for different trade types
+SCRAPE_INSIDER_TRADES = True
+SCRAPE_CONGRESS_TRADES = True
+SCRAPE_HEDGE_FUNDS = True
 
-def scrape_and_process() -> list:
+
+def scrape_and_process() -> dict:
     """Main scraping and processing job."""
     logger.info("=" * 50)
     logger.info(f"Starting scrape job at {datetime.now()}")
 
-    # Scrape SEC Form 4
-    trades = form4_scraper.scrape_recent_filings(max_filings=50)
-    logger.info(f"Scraped {len(trades)} trades from SEC")
+    results = {
+        'insider_trades': [],
+        'congress_trades': [],
+        'hedge_fund_filings': [],
+    }
 
-    new_trades = []
-    for trade in trades:
-        # Analyze for anomalies
-        trade = analyze_trade(trade)
+    # === SCRAPE SEC FORM 4 (Insider Trades) ===
+    if SCRAPE_INSIDER_TRADES:
+        logger.info("\n--- Scraping SEC Form 4 (Insider Trades) ---")
+        trades = form4_scraper.scrape_recent_filings(max_filings=50)
+        logger.info(f"Scraped {len(trades)} insider trades from SEC")
 
-        # Calculate virality score
-        trade = score_and_tier(trade)
+        for trade in trades:
+            trade = analyze_trade(trade)
+            trade = score_and_tier(trade)
+            trade_id = insert_insider_trade(trade)
 
-        # Insert into database
-        trade_id = insert_insider_trade(trade)
+            if trade_id:
+                trade['id'] = trade_id
+                trade['trade_type'] = 'insider'
+                results['insider_trades'].append(trade)
+                logger.info(
+                    f"  Insider: ${trade.get('ticker', 'N/A')} - "
+                    f"{trade.get('insider_role', 'Unknown')} - "
+                    f"${trade.get('total_value', 0):,.0f} - "
+                    f"Score: {trade.get('virality_score', 0)}"
+                )
 
-        if trade_id:
-            trade['id'] = trade_id
-            new_trades.append(trade)
-            logger.info(
-                f"New trade: ${trade.get('ticker', 'N/A')} - "
-                f"{trade.get('insider_role', 'Unknown')} - "
-                f"${trade.get('total_value', 0):,.0f} - "
-                f"Score: {trade.get('virality_score', 0)}"
-            )
+        logger.info(f"Inserted {len(results['insider_trades'])} new insider trades")
 
-    logger.info(f"Inserted {len(new_trades)} new trades")
-    return new_trades
+    # === SCRAPE CONGRESS TRADES ===
+    if SCRAPE_CONGRESS_TRADES:
+        logger.info("\n--- Scraping Congressional Trades ---")
+        try:
+            congress_trades = scrape_congress_trades(max_trades=50)
+            logger.info(f"Scraped {len(congress_trades)} congressional trades")
+
+            for trade in congress_trades:
+                trade['trade_type'] = 'congress'
+                results['congress_trades'].append(trade)
+
+                if trade.get('virality_score', 0) >= 50:
+                    logger.info(
+                        f"  Congress: {trade.get('politician_name', 'Unknown')} - "
+                        f"${trade.get('ticker', 'N/A')} - "
+                        f"{trade.get('amount_range', '')} - "
+                        f"Score: {trade.get('virality_score', 0)}"
+                    )
+
+            logger.info(f"Found {len(results['congress_trades'])} congressional trades")
+        except Exception as e:
+            logger.error(f"Error scraping congress trades: {e}")
+
+    # === SCRAPE HEDGE FUND 13F FILINGS ===
+    if SCRAPE_HEDGE_FUNDS:
+        logger.info("\n--- Scraping Hedge Fund 13F Filings ---")
+        try:
+            filings = scrape_hedge_fund_filings(max_filings=20)
+            logger.info(f"Scraped {len(filings)} 13F filings")
+
+            for filing in filings:
+                filing['trade_type'] = '13f'
+                results['hedge_fund_filings'].append(filing)
+
+                if filing.get('is_famous') or filing.get('virality_score', 0) >= 50:
+                    logger.info(
+                        f"  13F: {filing.get('fund_name', 'Unknown')[:30]} - "
+                        f"${filing.get('total_value', 0)/1e9:.1f}B - "
+                        f"Score: {filing.get('virality_score', 0)}"
+                    )
+
+            logger.info(f"Found {len(results['hedge_fund_filings'])} 13F filings")
+        except Exception as e:
+            logger.error(f"Error scraping 13F filings: {e}")
+
+    # Summary
+    total = (len(results['insider_trades']) +
+             len(results['congress_trades']) +
+             len(results['hedge_fund_filings']))
+    logger.info(f"\nTotal new items: {total}")
+
+    return results
+
+
+def post_all_alerts(results: dict):
+    """Post alerts for all trade types."""
+    posted_count = 0
+
+    # Post insider trade alerts
+    for trade in results.get('insider_trades', []):
+        tier = trade.get('tier', 4)
+        if tier <= 2:
+            tweet_id = twitter_bot.post_trade(trade)
+            if tweet_id:
+                posted_count += 1
+            post_to_discord_sync(trade)
+            time.sleep(30)
+
+    # Post congress trade alerts
+    for trade in results.get('congress_trades', []):
+        tier = trade.get('tier', 4)
+        if tier <= 2:
+            formatted = tweet_formatter.format_congress_trade(trade)
+            tweet_id = twitter_bot.post_text(formatted['text'])
+            if tweet_id:
+                posted_count += 1
+            time.sleep(30)
+
+    # Post 13F filing alerts (famous funds only or high score)
+    for filing in results.get('hedge_fund_filings', []):
+        if filing.get('is_famous') or filing.get('virality_score', 0) >= 60:
+            formatted = tweet_formatter.format_hedge_fund_filing(filing)
+            tweet_id = twitter_bot.post_text(formatted['text'])
+            if tweet_id:
+                posted_count += 1
+            time.sleep(30)
+
+    return posted_count
 
 
 def post_alerts():
@@ -121,20 +220,24 @@ def run_full_pipeline():
     logger.info("Running full pipeline")
     logger.info("#" * 50)
 
-    # Step 1: Scrape and process
-    new_trades = scrape_and_process()
+    # Step 1: Scrape and process all sources
+    results = scrape_and_process()
 
-    # Step 2: Post alerts
+    # Step 2: Post alerts for new items
+    posted = post_all_alerts(results)
+    logger.info(f"Posted {posted} new alerts")
+
+    # Step 3: Post any pending insider trade alerts from DB
     post_alerts()
 
-    # Step 3: Show stats
+    # Step 4: Show stats
     stats = get_stats_summary()
     logger.info("\nDatabase Stats:")
     for key, value in stats.items():
         logger.info(f"  {key}: {value}")
 
     logger.info("Pipeline complete")
-    return new_trades
+    return results
 
 
 def run_scheduler():

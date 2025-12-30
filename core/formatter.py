@@ -17,9 +17,15 @@ try:
         INSIDER_TIER3_TEMPLATES,
         DAILY_ROUNDUP_TEMPLATE,
         CLUSTER_BUY_TEMPLATE,
+        CONGRESS_TIER1_TEMPLATES,
+        CONGRESS_TIER2_TEMPLATES,
+        CONGRESS_TIER3_TEMPLATES,
+        HEDGE_FUND_TIER1_TEMPLATES,
+        HEDGE_FUND_TIER2_TEMPLATES,
+        HEDGE_FUND_TIER3_TEMPLATES,
         get_random_insight,
     )
-    from config.influencers import get_tags_for_stock
+    from config.influencers import get_tags_for_stock, get_tags_for_congress, get_tags_for_hedge_fund
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from config.templates import (
@@ -28,9 +34,15 @@ except ImportError:
         INSIDER_TIER3_TEMPLATES,
         DAILY_ROUNDUP_TEMPLATE,
         CLUSTER_BUY_TEMPLATE,
+        CONGRESS_TIER1_TEMPLATES,
+        CONGRESS_TIER2_TEMPLATES,
+        CONGRESS_TIER3_TEMPLATES,
+        HEDGE_FUND_TIER1_TEMPLATES,
+        HEDGE_FUND_TIER2_TEMPLATES,
+        HEDGE_FUND_TIER3_TEMPLATES,
         get_random_insight,
     )
-    from config.influencers import get_tags_for_stock
+    from config.influencers import get_tags_for_stock, get_tags_for_congress, get_tags_for_hedge_fund
 
 
 class TweetFormatter:
@@ -180,6 +192,165 @@ class TweetFormatter:
 
         return self._trim_to_length(text)
 
+    def format_congress_trade(self, trade: Dict) -> Dict:
+        """
+        Format a congressional trade for Twitter.
+        Returns dict with 'text', 'tags', 'tier'.
+        """
+        tier = trade.get('tier', 4)
+        ticker = trade.get('ticker') or 'N/A'
+
+        # Select template based on tier
+        if tier == 1:
+            template = random.choice(CONGRESS_TIER1_TEMPLATES)
+        elif tier == 2:
+            template = random.choice(CONGRESS_TIER2_TEMPLATES)
+        else:
+            template = random.choice(CONGRESS_TIER3_TEMPLATES)
+
+        # Prepare values
+        politician_name = trade.get('politician_name', 'Unknown')
+        party = trade.get('politician_party', '?')
+        state = trade.get('politician_state', '?')
+        chamber = trade.get('politician_chamber', 'Congress')
+
+        # Action text
+        tx_type = trade.get('transaction_type', '')
+        if 'purchase' in tx_type.lower() or 'buy' in tx_type.lower():
+            action = 'BOUGHT'
+        elif 'sale' in tx_type.lower() or 'sell' in tx_type.lower():
+            action = 'SOLD'
+        else:
+            action = tx_type.upper()
+
+        # Dates
+        trade_date = trade.get('transaction_date', 'N/A')
+        disclosure_date = trade.get('disclosure_date', 'N/A')
+
+        # Anomaly text
+        anomaly_texts = trade.get('anomaly_texts', [])
+        anomaly_text = anomaly_texts[0] if anomaly_texts else ''
+
+        # Tags
+        tags = []
+        if tier <= 2:
+            tag_handles = get_tags_for_congress(max_tags=2)
+            tags = ['@' + h for h in tag_handles]
+        tags_text = ' '.join(tags)
+
+        # Format template
+        try:
+            text = template.format(
+                politician_name=politician_name,
+                party=party,
+                state=state,
+                chamber=chamber,
+                action=action,
+                ticker=ticker,
+                value_range=trade.get('amount_range', 'Unknown'),
+                trade_date=trade_date,
+                disclosure_date=disclosure_date,
+                anomaly_text=anomaly_text,
+                tags=tags_text,
+            )
+        except KeyError:
+            text = f"🏛️ {politician_name} ({party}) {action} ${ticker} - {trade.get('amount_range', '')}"
+
+        text = self._clean_whitespace(text)
+        text = self._trim_to_length(text)
+
+        return {
+            'text': text,
+            'tags': tags,
+            'tier': tier,
+            'ticker': ticker,
+            'type': 'congress',
+        }
+
+    def format_hedge_fund_filing(self, filing: Dict) -> Dict:
+        """
+        Format a 13F hedge fund filing for Twitter.
+        Returns dict with 'text', 'tags', 'tier'.
+        """
+        tier = filing.get('tier', 4)
+
+        # Select template based on tier
+        if tier == 1:
+            template = random.choice(HEDGE_FUND_TIER1_TEMPLATES)
+        elif tier == 2:
+            template = random.choice(HEDGE_FUND_TIER2_TEMPLATES)
+        else:
+            template = random.choice(HEDGE_FUND_TIER3_TEMPLATES)
+
+        # Prepare values
+        fund_name = filing.get('fund_name', 'Unknown Fund')
+        manager_name = filing.get('manager_name', '')
+        if not manager_name:
+            manager_name = fund_name.split()[0]  # First word as fallback
+
+        total_value = filing.get('total_value', 0)
+        total_value_display = self._format_value(total_value)
+        position_count = filing.get('position_count', 0)
+
+        # Quarter from report date
+        report_date = filing.get('report_date', '')
+        quarter = 'Q4'
+        if report_date:
+            month = int(report_date[5:7]) if len(report_date) >= 7 else 12
+            quarter = f"Q{(month - 1) // 3 + 1}"
+
+        # Top holdings text
+        import json
+        top_holdings = filing.get('top_holdings', '[]')
+        if isinstance(top_holdings, str):
+            try:
+                top_holdings = json.loads(top_holdings)
+            except:
+                top_holdings = []
+
+        top_holdings_lines = []
+        for h in top_holdings[:5]:
+            ticker = h.get('ticker') or 'N/A'
+            value = h.get('value', 0)
+            top_holdings_lines.append(f"${ticker}: {self._format_value(value)}")
+        top_holdings_text = '\n'.join(top_holdings_lines) if top_holdings_lines else 'N/A'
+
+        # Anomaly text
+        anomaly_texts = filing.get('anomaly_texts', [])
+        anomaly_text = anomaly_texts[0] if anomaly_texts else ''
+
+        # Tags
+        tags = []
+        if tier <= 2:
+            tag_handles = get_tags_for_hedge_fund(fund_name, max_tags=2)
+            tags = ['@' + h for h in tag_handles]
+        tags_text = ' '.join(tags)
+
+        # Format template
+        try:
+            text = template.format(
+                fund_name=fund_name,
+                manager_name=manager_name,
+                total_value=total_value_display,
+                position_count=position_count,
+                quarter=quarter,
+                top_holdings_text=top_holdings_text,
+                anomaly_text=anomaly_text,
+                tags=tags_text,
+            )
+        except KeyError:
+            text = f"📊 {fund_name} 13F: ${total_value_display} across {position_count} positions"
+
+        text = self._clean_whitespace(text)
+        text = self._trim_to_length(text)
+
+        return {
+            'text': text,
+            'tags': tags,
+            'tier': tier,
+            'type': '13f',
+        }
+
     def _format_value(self, value: float) -> str:
         """Format dollar value for display."""
         if value >= 1_000_000_000:
@@ -319,6 +490,106 @@ class DiscordFormatter:
                 value_str = f"${value/1_000:.0f}K"
 
             message += f"{i}. **${ticker}** — {role} — {value_str}\n"
+
+        return message.strip()
+
+    def format_congress_trade(self, trade: Dict) -> str:
+        """Format a congressional trade for Discord."""
+        ticker = trade.get('ticker') or 'N/A'
+        politician = trade.get('politician_name', 'Unknown')
+        party = trade.get('politician_party', '?')
+        state = trade.get('politician_state', '?')
+        chamber = trade.get('politician_chamber', 'Congress')
+
+        tx_type = trade.get('transaction_type', '')
+        action = 'BOUGHT' if 'purchase' in tx_type.lower() else 'SOLD' if 'sale' in tx_type.lower() else tx_type
+
+        message = f"""**🏛️ CONGRESSIONAL TRADE ALERT**
+
+**Politician:** {politician} ({party}-{state})
+**Chamber:** {chamber}
+**Ticker:** ${ticker}
+**Company:** {trade.get('company_name') or 'N/A'}
+**Action:** {action}
+**Amount:** {trade.get('amount_range', 'Unknown')}
+**Trade Date:** {trade.get('transaction_date', 'N/A')}
+**Disclosed:** {trade.get('disclosure_date', 'N/A')}
+**Days to Disclose:** {trade.get('days_to_disclose', 'N/A')}
+"""
+
+        anomaly_texts = trade.get('anomaly_texts', [])
+        if anomaly_texts:
+            message += "\n**Notable:**\n"
+            for anomaly in anomaly_texts:
+                message += f"• {anomaly}\n"
+
+        score = trade.get('virality_score', 0)
+        message += f"\n**Virality Score:** {score}/100"
+
+        return message.strip()
+
+    def format_hedge_fund_filing(self, filing: Dict) -> str:
+        """Format a 13F filing for Discord."""
+        import json
+
+        fund_name = filing.get('fund_name', 'Unknown')
+        manager = filing.get('manager_name', '')
+        total_value = filing.get('total_value', 0)
+        position_count = filing.get('position_count', 0)
+
+        if total_value >= 1e9:
+            value_str = f"${total_value/1e9:.2f}B"
+        elif total_value >= 1e6:
+            value_str = f"${total_value/1e6:.2f}M"
+        else:
+            value_str = f"${total_value:,.0f}"
+
+        message = f"""**📊 13F HEDGE FUND FILING**
+
+**Fund:** {fund_name}
+"""
+        if manager:
+            message += f"**Manager:** {manager}\n"
+
+        message += f"""**Portfolio Value:** {value_str}
+**Total Positions:** {position_count}
+**Filing Date:** {filing.get('filing_date', 'N/A')}
+**Report Date:** {filing.get('report_date', 'N/A')}
+"""
+
+        # Top holdings
+        top_holdings = filing.get('top_holdings', '[]')
+        if isinstance(top_holdings, str):
+            try:
+                top_holdings = json.loads(top_holdings)
+            except:
+                top_holdings = []
+
+        if top_holdings:
+            message += "\n**Top Holdings:**\n"
+            for h in top_holdings[:10]:
+                ticker = h.get('ticker') or 'N/A'
+                value = h.get('value', 0)
+                shares = h.get('shares', 0)
+                if value >= 1e9:
+                    val_str = f"${value/1e9:.2f}B"
+                elif value >= 1e6:
+                    val_str = f"${value/1e6:.1f}M"
+                else:
+                    val_str = f"${value/1e3:.0f}K"
+                message += f"• **${ticker}**: {val_str} ({shares:,} shares)\n"
+
+        anomaly_texts = filing.get('anomaly_texts', [])
+        if anomaly_texts:
+            message += "\n**Notable:**\n"
+            for anomaly in anomaly_texts:
+                message += f"• {anomaly}\n"
+
+        score = filing.get('virality_score', 0)
+        message += f"\n**Virality Score:** {score}/100"
+
+        if filing.get('filing_url'):
+            message += f"\n\n📄 [View SEC Filing]({filing.get('filing_url')})"
 
         return message.strip()
 
