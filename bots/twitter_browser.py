@@ -33,8 +33,9 @@ TWITTER_URL = "https://x.com"
 USER_DATA_DIR = os.path.join(os.path.dirname(__file__), ".twitter_session")
 SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), ".screenshots")
 
-# Safety settings
-MIN_DELAY_BETWEEN_POSTS = 180  # 3 minutes minimum between posts
+# Safety settings - randomized for human-like behavior
+MIN_DELAY_BETWEEN_POSTS = 150  # 2.5 minutes minimum
+MAX_DELAY_BETWEEN_POSTS = 300  # 5 minutes maximum
 MAX_POSTS_PER_HOUR = 8  # Conservative limit
 TYPING_DELAY_MIN = 50  # ms per character
 TYPING_DELAY_MAX = 150  # ms per character
@@ -251,15 +252,22 @@ class TwitterBrowserBot:
         return self.is_logged_in
 
     def _can_post(self) -> tuple[bool, str]:
-        """Check if we can post (rate limiting)."""
+        """Check if we can post (rate limiting with random human-like delays)."""
         now = datetime.now()
 
-        # Check minimum delay between posts
+        # Check minimum delay between posts (randomized for human-like behavior)
         if self.last_post_time:
+            # Use a random delay between MIN and MAX for each posting window
+            if not hasattr(self, '_current_delay') or self._current_delay is None:
+                self._current_delay = random.randint(MIN_DELAY_BETWEEN_POSTS, MAX_DELAY_BETWEEN_POSTS)
+
             seconds_since_last = (now - self.last_post_time).total_seconds()
-            if seconds_since_last < MIN_DELAY_BETWEEN_POSTS:
-                wait_time = MIN_DELAY_BETWEEN_POSTS - seconds_since_last
+            if seconds_since_last < self._current_delay:
+                wait_time = self._current_delay - seconds_since_last
                 return False, f"Rate limit: wait {wait_time:.0f}s before next post"
+            else:
+                # Reset for next post
+                self._current_delay = None
 
         # Check hourly limit
         if self.hour_start:
