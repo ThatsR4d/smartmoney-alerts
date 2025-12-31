@@ -16,7 +16,7 @@ import logging
 # Ensure project root is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.database import init_db, insert_insider_trade, get_unposted_trades, get_stats_summary
+from core.database import init_db, insert_insider_trade, get_unposted_trades, get_stats_summary, mark_trade_posted
 from scrapers.sec_form4 import SECForm4Scraper
 from scrapers.congress import scrape_congress_trades
 from scrapers.hedge_funds import scrape_hedge_fund_filings
@@ -237,6 +237,11 @@ def post_alerts():
             tweet_id = post_to_twitter(trade=trade)
             if tweet_id:
                 posted_count += 1
+                # Mark as posted in database
+                trade_id = trade.get('id')
+                if trade_id:
+                    mark_trade_posted(trade_id, 'twitter', tweet_id)
+                    logger.info(f"Marked trade {trade_id} as posted")
 
             # Post to Discord (sync version)
             post_to_discord_sync(trade)
