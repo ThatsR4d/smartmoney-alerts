@@ -18,15 +18,14 @@ Railway offers easy deployment with free tier.
 
 Add in Railway dashboard:
 ```
-TWITTER_API_KEY=xxx
-TWITTER_API_SECRET=xxx
-TWITTER_ACCESS_TOKEN=xxx
-TWITTER_ACCESS_SECRET=xxx
+TWITTER_MODE=browser
 DISCORD_BOT_TOKEN=xxx
 DISCORD_WEBHOOK_URL=xxx
 DRY_RUN=false
 POST_TO_TWITTER=true
 ```
+
+Note: Browser mode requires setting up Twitter session locally first, then including the `.twitter_session/` directory in the deployment.
 
 #### Costs
 
@@ -45,7 +44,7 @@ POST_TO_TWITTER=true
 4. Connect GitHub repo
 5. Configure:
    - Runtime: Python 3
-   - Build Command: `pip install -r requirements.txt`
+   - Build Command: `pip install -r requirements.txt && playwright install chromium --with-deps`
    - Start Command: `python main.py --daemon`
 6. Add environment variables
 
@@ -77,6 +76,7 @@ primary_region = "ord"
 [env]
   DRY_RUN = "false"
   POST_TO_TWITTER = "true"
+  TWITTER_MODE = "browser"
 
 [processes]
   app = "python main.py --daemon"
@@ -84,7 +84,7 @@ primary_region = "ord"
 
 Set secrets:
 ```bash
-fly secrets set TWITTER_API_KEY=xxx TWITTER_API_SECRET=xxx ...
+fly secrets set DISCORD_BOT_TOKEN=xxx DISCORD_WEBHOOK_URL=xxx
 ```
 
 ---
@@ -109,10 +109,14 @@ sudo apt install python3 python3-pip python3-venv
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+playwright install chromium --with-deps
 
 # Configure
 cp .env.example .env
 nano .env  # Add your keys
+
+# Setup Twitter (browser mode)
+python main.py --setup-twitter
 
 # Test
 python main.py --once
@@ -171,9 +175,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies for Playwright
+RUN apt-get update && apt-get install -y \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install chromium
 
 # Copy application
 COPY . .
@@ -195,16 +217,15 @@ services:
     build: .
     restart: always
     environment:
-      - TWITTER_API_KEY=${TWITTER_API_KEY}
-      - TWITTER_API_SECRET=${TWITTER_API_SECRET}
-      - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
-      - TWITTER_ACCESS_SECRET=${TWITTER_ACCESS_SECRET}
+      - TWITTER_MODE=browser
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - DRY_RUN=false
       - POST_TO_TWITTER=true
     volumes:
       - ./data:/app/data
+      - ./bots/.twitter_session:/app/bots/.twitter_session
+      - ./bots/post_history.json:/app/bots/post_history.json
 ```
 
 Commands:
@@ -226,6 +247,7 @@ docker-compose up -d --build   # Rebuild and start
 - [ ] `DRY_RUN=false`
 - [ ] `POST_TO_TWITTER=true`
 - [ ] Database initialized
+- [ ] Twitter session created (browser mode)
 - [ ] API rate limits configured appropriately
 
 ### After Deployment
@@ -281,6 +303,33 @@ Create a health endpoint or monitor the process.
 
 ---
 
+## Browser Mode Considerations
+
+### Session Persistence
+
+Browser mode requires a logged-in Twitter session. For cloud deployments:
+
+1. **Local setup first**: Run `python main.py --setup-twitter` locally
+2. **Copy session**: Include `.twitter_session/` directory in deployment
+3. **Mount as volume**: In Docker, mount the session directory
+
+### Session Expiry
+
+Twitter sessions may expire. If posting fails:
+1. Delete `.twitter_session/` directory
+2. Run setup again
+3. Redeploy with new session
+
+### Headless Mode
+
+Browser runs in headless mode in production. For debugging:
+```python
+# In twitter_browser.py, temporarily set:
+headless=False
+```
+
+---
+
 ## Scaling Considerations
 
 ### Current Limits
@@ -297,3 +346,24 @@ Create a health endpoint or monitor the process.
 4. **Multiple Twitter Accounts**: Rotate to avoid rate limits
 
 For now, single process is sufficient for 24/7 operation.
+
+---
+
+## Backup Strategy
+
+### Database Backup
+
+```bash
+# Manual backup
+cp data/smartmoney.db data/smartmoney.db.backup
+
+# Automated daily backup
+0 0 * * * cp /path/to/data/smartmoney.db /path/to/backups/smartmoney.db.$(date +\%Y\%m\%d)
+```
+
+### Session Backup
+
+```bash
+# Backup Twitter session
+tar -czf twitter_session_backup.tar.gz bots/.twitter_session/
+```

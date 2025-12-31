@@ -30,17 +30,45 @@ venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
+### 4. Install Playwright (For Browser Mode)
+
+```bash
+playwright install chromium
+```
+
+### 5. Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your API credentials.
+Edit `.env` with your configuration.
 
-## API Keys Setup
+## Twitter Setup
 
-### Twitter/X API
+### Option 1: Browser Mode (Recommended)
+
+Browser automation is easier to set up and doesn't require API keys.
+
+```bash
+python main.py --setup-twitter
+```
+
+This will:
+1. Open a Chromium browser window
+2. Navigate to Twitter login
+3. Wait for you to log in manually
+4. Save your session for future posts
+
+**Advantages:**
+- No API costs
+- No developer account needed
+- More reliable posting
+- Human-like behavior (avoids rate limits)
+
+**Session Storage:** `bots/.twitter_session/`
+
+### Option 2: Twitter API
 
 1. Go to [developer.twitter.com](https://developer.twitter.com)
 2. Create a new project and app
@@ -52,12 +80,15 @@ Edit `.env` with your API credentials.
 
 Add to `.env`:
 ```
+TWITTER_MODE=api
 TWITTER_API_KEY=your_api_key
 TWITTER_API_SECRET=your_api_secret
 TWITTER_ACCESS_TOKEN=your_access_token
 TWITTER_ACCESS_SECRET=your_access_secret
 TWITTER_BEARER_TOKEN=your_bearer_token
 ```
+
+## Discord Setup
 
 ### Discord Bot
 
@@ -104,6 +135,9 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 TWITTER_ENABLED=true
 DISCORD_ENABLED=true
 
+# Twitter mode: "browser" or "api"
+TWITTER_MODE=browser
+
 # Actually post (false = log only)
 POST_TO_TWITTER=true
 
@@ -115,13 +149,32 @@ DRY_RUN=true
 
 ```bash
 # How often to check SEC (minutes)
-SCRAPE_INTERVAL_MINUTES=10
+SCRAPE_INTERVAL_MINUTES=5
 
 # Minimum trade value to track
-MIN_TRANSACTION_VALUE=50000
+MIN_TRANSACTION_VALUE=10000
 
-# Max tweets per hour
-MAX_POSTS_PER_HOUR=10
+# Max items per scrape
+MAX_FORM4_FILINGS=100
+MAX_CONGRESS_TRADES=200
+MAX_13F_FILINGS=100
+
+# Transaction types to track
+TRACK_PURCHASES=true
+TRACK_SALES=true
+TRACK_AWARDS=false
+```
+
+### Posting Settings
+
+```bash
+# Virality score thresholds
+TIER1_SCORE=70
+TIER2_SCORE=50
+TIER3_SCORE=30
+
+# Rate limiting (API mode)
+MAX_POSTS_PER_HOUR=15
 ```
 
 ## Initialize Database
@@ -134,13 +187,18 @@ This creates `data/smartmoney.db` with all required tables.
 
 ## Verify Setup
 
-### Test Scraper
+### Test Scrapers
 
 ```bash
+# Test SEC Form 4 scraper
 python scrapers/sec_form4.py
-```
 
-Should output recent insider trades.
+# Test Congress scraper
+python scrapers/congress.py
+
+# Test 13F scraper
+python scrapers/hedge_funds.py
+```
 
 ### Test Full Pipeline (Dry Run)
 
@@ -207,9 +265,15 @@ sudo systemctl status smartmoney
 
 ### "Twitter bot disabled or missing credentials"
 
+**API Mode:**
 - Check all 4 Twitter credentials are set in `.env`
 - Ensure no quotes around values
 - Verify API access level (need Elevated or higher)
+
+**Browser Mode:**
+- Run `python main.py --setup-twitter` to create session
+- Check `.twitter_session/` directory exists
+- Try deleting session and re-logging in
 
 ### "Discord bot token not configured"
 
@@ -230,6 +294,12 @@ sudo systemctl status smartmoney
 
 ### Rate Limited
 
-- Reduce `MAX_POSTS_PER_HOUR`
-- Increase `SCRAPE_INTERVAL_MINUTES`
-- Check Twitter API usage dashboard
+- Reduce posting frequency
+- Increase delay between posts
+- Check Twitter/SEC API usage dashboards
+
+### Browser Mode Issues
+
+- Delete `.twitter_session/` and re-login
+- Check Playwright is installed: `playwright install chromium`
+- Look at screenshots in `bots/screenshots/` for debugging
