@@ -5,6 +5,7 @@ Uses SQLite for simplicity and portability.
 
 import sqlite3
 import os
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -320,6 +321,11 @@ def insert_hedge_fund_filing(filing_data: Dict) -> Optional[int]:
     cursor = conn.cursor()
 
     try:
+        # Map scraper fields to database fields
+        # Scraper uses 'holdings' and 'top_holdings', DB uses position change fields
+        holdings = filing_data.get('holdings', [])
+        top_holdings = filing_data.get('top_holdings', [])
+
         cursor.execute("""
             INSERT OR IGNORE INTO hedge_fund_filings (
                 accession_number, filing_date, report_date,
@@ -334,12 +340,12 @@ def insert_hedge_fund_filing(filing_data: Dict) -> Optional[int]:
             filing_data.get('fund_name'),
             filing_data.get('fund_cik'),
             filing_data.get('manager_name'),
-            json.dumps(filing_data.get('new_positions', [])),
-            json.dumps(filing_data.get('increased_positions', [])),
-            json.dumps(filing_data.get('decreased_positions', [])),
-            json.dumps(filing_data.get('exited_positions', [])),
+            json.dumps(top_holdings),  # Store top holdings as new_positions for now
+            json.dumps([]),  # increased_positions - would need historical comparison
+            json.dumps([]),  # decreased_positions - would need historical comparison
+            json.dumps([]),  # exited_positions - would need historical comparison
             filing_data.get('total_value', 0),
-            filing_data.get('position_count', 0),
+            filing_data.get('position_count', 0) or len(holdings),
             filing_data.get('virality_score', 0),
         ))
         conn.commit()
