@@ -215,13 +215,21 @@ def post_alerts():
     posted_count = 0
 
     for trade in unposted:
+        # Calculate tier if not present
+        trade = score_and_tier(trade)
         tier = trade.get('tier', 4)
         score = trade.get('virality_score', 0)
+        ticker = trade.get('ticker', '')
+
+        # Skip trades with bad/missing tickers
+        if not ticker or ticker in ['N/A', 'NONE', 'None', '']:
+            logger.debug(f"Skipping trade with invalid ticker: {ticker}")
+            continue
 
         # Only auto-post tier 1-2 trades
         if tier <= 2:
             logger.info(
-                f"Posting tier {tier} trade: ${trade.get('ticker', 'N/A')} "
+                f"Posting tier {tier} trade: ${ticker} "
                 f"(score: {score}) - {get_tier_description(tier)}"
             )
 
@@ -238,7 +246,7 @@ def post_alerts():
 
         elif tier == 3:
             # Tier 3: batch post less frequently
-            logger.info(f"Tier 3 trade queued: ${trade.get('ticker', 'N/A')} (score: {score})")
+            logger.info(f"Tier 3 trade queued: ${ticker} (score: {score})")
 
     logger.info(f"Posted {posted_count} alerts")
     return posted_count

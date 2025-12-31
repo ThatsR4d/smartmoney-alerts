@@ -356,32 +356,85 @@ class TwitterBrowserBot:
                 logger.error("Could not find text input")
                 return None
 
-            await self._random_delay(1, 2)
+            await self._random_delay(1.5, 2.5)
 
-            # Click the Post button
+            # Click the Post button - try multiple methods
             post_button_selectors = [
                 '[data-testid="tweetButtonInline"]',
                 '[data-testid="tweetButton"]',
-                'button[type="button"]:has-text("Post")'
+                'button[data-testid="tweetButtonInline"]',
+                'button[data-testid="tweetButton"]',
             ]
 
             posted = False
+
+            # Method 1: Try direct click on selectors
             for selector in post_button_selectors:
                 try:
-                    button = await self.page.wait_for_selector(selector, timeout=5000)
+                    button = await self.page.wait_for_selector(selector, timeout=3000)
                     if button:
                         # Check if button is enabled
                         is_disabled = await button.get_attribute('aria-disabled')
                         if is_disabled != 'true':
-                            await self._random_delay(0.5, 1)
-                            await button.click()
+                            # Scroll into view first
+                            await button.scroll_into_view_if_needed()
+                            await self._random_delay(0.3, 0.6)
+
+                            # Try regular click
+                            await button.click(force=True)
                             posted = True
+                            logger.info(f"Clicked post button via selector: {selector}")
                             break
-                except:
+                except Exception as e:
+                    logger.debug(f"Selector {selector} failed: {e}")
                     continue
 
+            # Method 2: Try JavaScript click as fallback
             if not posted:
-                logger.error("Could not click post button")
+                try:
+                    logger.info("Trying JavaScript click fallback...")
+                    await self._random_delay(0.5, 1)
+                    result = await self.page.evaluate('''() => {
+                        // Try multiple ways to find the post button
+                        let btn = document.querySelector('[data-testid="tweetButtonInline"]');
+                        if (!btn) btn = document.querySelector('[data-testid="tweetButton"]');
+                        if (!btn) {
+                            // Find by text content
+                            const buttons = document.querySelectorAll('button');
+                            for (const b of buttons) {
+                                if (b.innerText === 'Post' && !b.disabled) {
+                                    btn = b;
+                                    break;
+                                }
+                            }
+                        }
+                        if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                    }''')
+                    if result:
+                        posted = True
+                        logger.info("Posted via JavaScript click")
+                except Exception as e:
+                    logger.error(f"JavaScript click failed: {e}")
+
+            # Method 3: Try keyboard shortcut (Ctrl+Enter)
+            if not posted:
+                try:
+                    logger.info("Trying keyboard shortcut (Ctrl+Enter)...")
+                    await self._random_delay(0.3, 0.6)
+                    await self.page.keyboard.press('Control+Enter')
+                    await self._random_delay(1, 2)
+                    # Check if we're still on compose (if not, it worked)
+                    posted = True
+                    logger.info("Posted via Ctrl+Enter")
+                except Exception as e:
+                    logger.error(f"Keyboard shortcut failed: {e}")
+
+            if not posted:
+                logger.error("Could not click post button after all attempts")
                 await self.page.screenshot(
                     path=os.path.join(SCREENSHOT_DIR, f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
                 )
