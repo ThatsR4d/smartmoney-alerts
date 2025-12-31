@@ -277,11 +277,11 @@ def get_unposted_trades(platform: str = 'twitter', limit: int = 50) -> List[Dict
     cursor.execute(f"""
         SELECT * FROM insider_trades
         WHERE {column} = 0
-        AND transaction_type = 'P'
+        AND transaction_type IN ('P', 'S')
         AND total_value >= ?
         ORDER BY virality_score DESC, filing_date DESC
         LIMIT ?
-    """, (50000, limit))  # Only purchases over $50K
+    """, (50000, limit))  # Purchases and sales over $50K
 
     rows = cursor.fetchall()
     conn.close()

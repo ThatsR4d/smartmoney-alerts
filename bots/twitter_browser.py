@@ -276,6 +276,103 @@ class TwitterBrowserBot:
 
         return True, "OK"
 
+    async def _verify_post_sent(self) -> bool:
+        """Verify tweet was actually posted by checking if compose box is gone."""
+        try:
+            # Check if the compose textarea still has content (means post failed)
+            textarea = await self.page.query_selector('[data-testid="tweetTextarea_0"]')
+            if textarea:
+                # Get the text content
+                content = await self.page.evaluate('''() => {
+                    const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+                    return el ? el.textContent : '';
+                }''')
+                if content and len(content.strip()) > 10:
+                    logger.info(f"Compose box still has content ({len(content)} chars) - post likely failed")
+                    return False
+
+            # Check if Post button is still enabled (means post didn't go through)
+            button = await self.page.query_selector('[data-testid="tweetButtonInline"]')
+            if button:
+                is_disabled = await button.get_attribute('aria-disabled')
+                if is_disabled != 'true':
+                    # Button still clickable, check if compose area has text
+                    logger.info("Post button still active - checking compose area")
+                    # If we get here and button is active, post might have failed
+                    # But it's also possible the UI just hasn't updated yet
+
+            # Look for success indicators - toast notification or cleared compose
+            # Twitter shows a brief "Your post was sent" or similar
+            await self._random_delay(1, 2)
+
+            # Final check - is compose area empty now?
+            content_after = await self.page.evaluate('''() => {
+                const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+                return el ? el.textContent.trim() : '';
+            }''')
+
+            if not content_after or len(content_after) < 5:
+                logger.info("Compose area is empty - post succeeded!")
+                return True
+            else:
+                logger.info(f"Compose area still has {len(content_after)} chars - post may have failed")
+                return False
+
+        except Exception as e:
+            logger.warning(f"Error verifying post: {e}")
+            # If we can't verify, assume failure to be safe
+            return False
+
+    async def _post_via_tab_enter(self):
+        """Navigate to Post button with Tab and press Enter."""
+        # Tab from text area to the Post button
+        for _ in range(5):
+            await self.page.keyboard.press('Tab')
+            await self._random_delay(0.1, 0.2)
+
+        # Focus should now be on Post button, press Enter
+        await self.page.keyboard.press('Enter')
+
+    async def _post_via_direct_click(self):
+        """Click Post button directly using bounding box coordinates."""
+        button = await self.page.wait_for_selector('[data-testid="tweetButtonInline"]', timeout=5000)
+        if button:
+            box = await button.bounding_box()
+            if box:
+                x = box['x'] + box['width'] / 2
+                y = box['y'] + box['height'] / 2
+                logger.info(f"Clicking Post button at ({x}, {y})")
+                await self.page.mouse.click(x, y)
+                await self._random_delay(0.3, 0.5)
+                # Click again to be sure
+                await self.page.mouse.click(x, y)
+
+    async def _post_via_js_click(self):
+        """Use JavaScript to directly click the Post button."""
+        await self.page.evaluate('''() => {
+            const btn = document.querySelector('[data-testid="tweetButtonInline"]');
+            if (btn) {
+                btn.focus();
+                btn.click();
+            }
+        }''')
+
+    async def _post_via_keyboard(self):
+        """Use Ctrl+Enter keyboard shortcut to post - Twitter's native shortcut."""
+        # Click at the end of the text to ensure focus is in compose area
+        textarea = await self.page.query_selector('[data-testid="tweetTextarea_0"]')
+        if textarea:
+            await textarea.click()
+            await self._random_delay(0.2, 0.3)
+            # Press End to go to end of text
+            await self.page.keyboard.press('End')
+            await self._random_delay(0.1, 0.2)
+
+        # Ctrl+Enter is Twitter's native shortcut to post
+        await self.page.keyboard.down('Control')
+        await self.page.keyboard.press('Enter')
+        await self.page.keyboard.up('Control')
+
     async def post_tweet(self, text: str) -> Optional[str]:
         """Post a tweet with human-like behavior."""
         if DRY_RUN:
@@ -356,87 +453,46 @@ class TwitterBrowserBot:
                 logger.error("Could not find text input")
                 return None
 
-            await self._random_delay(2, 3)
+            await self._random_delay(1, 2)
 
-            # Click the Post button - try multiple methods
-            posted = False
+            # Take screenshot before attempting to post
+            await self.page.screenshot(
+                path=os.path.join(SCREENSHOT_DIR, f"before_post_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            )
 
-            # Method 1: Find button and click with mouse
-            try:
-                logger.info("Method 1: Finding Post button...")
-                button = await self.page.wait_for_selector('[data-testid="tweetButtonInline"]', timeout=5000)
-                if button:
-                    is_disabled = await button.get_attribute('aria-disabled')
-                    if is_disabled != 'true':
-                        # Get button position and click with mouse
-                        box = await button.bounding_box()
-                        if box:
-                            x = box['x'] + box['width'] / 2
-                            y = box['y'] + box['height'] / 2
-                            logger.info(f"Clicking at ({x}, {y})")
-                            await self.page.mouse.click(x, y)
-                            posted = True
-                            logger.info("Posted via mouse click")
-            except Exception as e:
-                logger.warning(f"Method 1 failed: {e}")
+            # Wait for any autocomplete to settle
+            await self._random_delay(1, 1.5)
 
-            # Method 2: Force click
-            if not posted:
+            # Try Ctrl+Enter first - most reliable, Twitter's native shortcut
+            click_methods = [
+                ("Ctrl+Enter shortcut", self._post_via_keyboard),
+                ("JavaScript click", self._post_via_js_click),
+            ]
+
+            for method_name, method_func in click_methods:
+                logger.info(f"Trying: {method_name}...")
                 try:
-                    logger.info("Method 2: Force click...")
-                    await self.page.click('[data-testid="tweetButtonInline"]', force=True, timeout=3000)
-                    posted = True
-                    logger.info("Posted via force click")
-                except Exception as e:
-                    logger.warning(f"Method 2 failed: {e}")
+                    await method_func()
+                    await self._random_delay(2, 3)
 
-            # Method 3: JavaScript with dispatchEvent
-            if not posted:
-                try:
-                    logger.info("Method 3: JavaScript dispatchEvent...")
-                    result = await self.page.evaluate('''() => {
-                        const btn = document.querySelector('[data-testid="tweetButtonInline"]') ||
-                                   document.querySelector('[data-testid="tweetButton"]');
-                        if (btn && btn.getAttribute('aria-disabled') !== 'true') {
-                            // Simulate real mouse events
-                            const events = ['mousedown', 'mouseup', 'click'];
-                            for (const eventType of events) {
-                                const event = new MouseEvent(eventType, {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window
-                                });
-                                btn.dispatchEvent(event);
-                            }
-                            return true;
-                        }
-                        return false;
-                    }''')
-                    if result:
-                        posted = True
-                        logger.info("Posted via JavaScript dispatchEvent")
+                    # VERIFY the post actually went through
+                    if await self._verify_post_sent():
+                        logger.info(f"SUCCESS: Tweet posted via {method_name}")
+                        break
+                    else:
+                        logger.warning(f"{method_name} - click executed but tweet not sent, trying next method")
                 except Exception as e:
-                    logger.warning(f"Method 3 failed: {e}")
-
-            # Method 4: Ctrl+Enter
-            if not posted:
-                try:
-                    logger.info("Method 4: Ctrl+Enter...")
-                    await self.page.keyboard.press('Control+Enter')
-                    posted = True
-                    logger.info("Posted via Ctrl+Enter")
-                except Exception as e:
-                    logger.warning(f"Method 4 failed: {e}")
-
-            if not posted:
-                logger.error("Could not click post button after all attempts")
+                    logger.warning(f"{method_name} failed: {e}")
+            else:
+                # All methods failed
+                logger.error("All posting methods failed - tweet was NOT sent")
                 await self.page.screenshot(
-                    path=os.path.join(SCREENSHOT_DIR, f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                    path=os.path.join(SCREENSHOT_DIR, f"failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
                 )
                 return None
 
-            # Wait for post to complete
-            await self._random_delay(3, 5)
+            # Wait a bit more for UI to settle
+            await self._random_delay(2, 3)
 
             # Update rate limiting
             self.last_post_time = datetime.now()
