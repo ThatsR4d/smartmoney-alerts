@@ -19,3 +19,4 @@ aiohttp>=3.9.0
 
 # Optional: for webhook fallback
 # Already included via requests
+flask>=3.0.0
