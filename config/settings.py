@@ -37,7 +37,14 @@ SEC_BASE_URL = "https://www.sec.gov"
 SEC_USER_AGENT = "SmartMoneyAlerts contact@smartmoneyalerts.com"  # SEC requires identification
 
 # === SCRAPING SETTINGS ===
-SCRAPE_INTERVAL_MINUTES = 5  # Check every 5 minutes for fresh data
+# Different intervals for different data sources (in minutes)
+SCRAPE_INTERVAL_FORM4 = 10  # SEC Form 4 - most time-sensitive
+SCRAPE_INTERVAL_CONGRESS = 60  # Congress trades - updated less frequently
+SCRAPE_INTERVAL_13F = 240  # 13F filings - quarterly, check every 4 hours
+
+# Legacy setting (used as fallback)
+SCRAPE_INTERVAL_MINUTES = 10
+
 MIN_TRANSACTION_VALUE = 10000  # Minimum $ to track (lowered for more coverage)
 MAX_POSTS_PER_HOUR = 15  # Increased for more activity
 

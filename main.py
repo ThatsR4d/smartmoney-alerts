@@ -31,7 +31,8 @@ from bots.discord_bot import discord_poster, post_to_discord_sync
 from config.settings import (
     SCRAPE_INTERVAL_MINUTES, DRY_RUN,
     MAX_FORM4_FILINGS, MAX_CONGRESS_TRADES, MAX_13F_FILINGS,
-    TWITTER_MODE
+    TWITTER_MODE,
+    SCRAPE_INTERVAL_FORM4, SCRAPE_INTERVAL_CONGRESS, SCRAPE_INTERVAL_13F
 )
 
 # Browser automation for Twitter (when API not available)
@@ -299,35 +300,124 @@ def run_full_pipeline():
 
 
 def run_scheduler():
-    """Run scheduled jobs."""
+    """Run scheduled jobs with different intervals per data source."""
     if not SCHEDULE_AVAILABLE:
         logger.error("'schedule' package not installed. Run: pip install schedule")
         logger.info("Falling back to simple loop...")
         run_simple_loop()
         return
 
-    logger.info(f"Starting scheduler (interval: {SCRAPE_INTERVAL_MINUTES} minutes)")
+    logger.info("Starting smart scheduler:")
+    logger.info(f"  Form 4 (insider trades): every {SCRAPE_INTERVAL_FORM4} minutes")
+    logger.info(f"  Congress trades: every {SCRAPE_INTERVAL_CONGRESS} minutes")
+    logger.info(f"  13F filings: every {SCRAPE_INTERVAL_13F} minutes")
 
-    # Schedule scraping job
-    schedule.every(SCRAPE_INTERVAL_MINUTES).minutes.do(run_full_pipeline)
+    # Schedule different scrapers at different intervals
+    schedule.every(SCRAPE_INTERVAL_FORM4).minutes.do(scrape_form4_only)
+    schedule.every(SCRAPE_INTERVAL_CONGRESS).minutes.do(scrape_congress_only)
+    schedule.every(SCRAPE_INTERVAL_13F).minutes.do(scrape_13f_only)
 
-    # Run immediately on start
+    # Post alerts check runs with Form 4 (most frequent)
+    schedule.every(SCRAPE_INTERVAL_FORM4).minutes.do(post_alerts)
+
+    # Run all immediately on start
     run_full_pipeline()
 
     # Keep running
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(30)
+
+
+def scrape_form4_only():
+    """Scrape only SEC Form 4 insider trades."""
+    logger.info("--- Scraping SEC Form 4 (Insider Trades) ---")
+    trades = form4_scraper.scrape_recent_filings(max_filings=MAX_FORM4_FILINGS)
+    logger.info(f"Scraped {len(trades)} insider trades from SEC")
+
+    new_count = 0
+    for trade in trades:
+        trade = analyze_trade(trade)
+        trade = score_and_tier(trade)
+        trade_id = insert_insider_trade(trade)
+        if trade_id:
+            new_count += 1
+
+    logger.info(f"Inserted {new_count} new insider trades")
+    return new_count
+
+
+def scrape_congress_only():
+    """Scrape only congressional trades."""
+    logger.info("--- Scraping Congressional Trades ---")
+    try:
+        congress_trades = scrape_congress_trades(max_trades=MAX_CONGRESS_TRADES)
+        logger.info(f"Scraped {len(congress_trades)} congressional trades")
+
+        new_count = 0
+        for trade in congress_trades:
+            trade['trade_type'] = 'congress'
+            trade_id = insert_congress_trade(trade)
+            if trade_id:
+                new_count += 1
+
+        logger.info(f"Inserted {new_count} new congressional trades")
+        return new_count
+    except Exception as e:
+        logger.error(f"Error scraping congress trades: {e}")
+        return 0
+
+
+def scrape_13f_only():
+    """Scrape only hedge fund 13F filings."""
+    logger.info("--- Scraping Hedge Fund 13F Filings ---")
+    try:
+        filings = scrape_hedge_fund_filings(max_filings=MAX_13F_FILINGS)
+        logger.info(f"Scraped {len(filings)} 13F filings")
+
+        new_count = 0
+        for filing in filings:
+            filing['trade_type'] = '13f'
+            filing_id = insert_hedge_fund_filing(filing)
+            if filing_id:
+                new_count += 1
+
+        logger.info(f"Inserted {new_count} new 13F filings")
+        return new_count
+    except Exception as e:
+        logger.error(f"Error scraping 13F filings: {e}")
+        return 0
 
 
 def run_simple_loop():
-    """Simple loop without schedule package."""
-    logger.info(f"Starting simple loop (interval: {SCRAPE_INTERVAL_MINUTES} minutes)")
+    """Simple loop without schedule package - uses Form 4 interval."""
+    logger.info(f"Starting simple loop (interval: {SCRAPE_INTERVAL_FORM4} minutes)")
+    logger.info("Note: Install 'schedule' package for smart intervals per data source")
+
+    last_congress = 0
+    last_13f = 0
 
     while True:
-        run_full_pipeline()
-        logger.info(f"Sleeping for {SCRAPE_INTERVAL_MINUTES} minutes...")
-        time.sleep(SCRAPE_INTERVAL_MINUTES * 60)
+        current_time = time.time()
+
+        # Always scrape Form 4
+        scrape_form4_only()
+
+        # Scrape congress if enough time passed
+        if current_time - last_congress >= SCRAPE_INTERVAL_CONGRESS * 60:
+            scrape_congress_only()
+            last_congress = current_time
+
+        # Scrape 13F if enough time passed
+        if current_time - last_13f >= SCRAPE_INTERVAL_13F * 60:
+            scrape_13f_only()
+            last_13f = current_time
+
+        # Post alerts
+        post_alerts()
+
+        logger.info(f"Sleeping for {SCRAPE_INTERVAL_FORM4} minutes...")
+        time.sleep(SCRAPE_INTERVAL_FORM4 * 60)
 
 
 def show_status():
