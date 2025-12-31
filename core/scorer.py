@@ -74,7 +74,7 @@ def calculate_virality_score(trade: Dict) -> int:
 
     # Sales by C-suite are less interesting unless very large
     if is_sale and role_score >= 14:
-        role_score = int(role_score * 0.6)  # Reduce for sales
+        role_score = int(role_score * 0.8)  # Reduce 20% for sales
 
     score += role_score
 
