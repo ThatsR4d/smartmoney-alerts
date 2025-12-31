@@ -268,6 +268,89 @@ def insert_insider_trade(trade_data: Dict) -> Optional[int]:
         conn.close()
 
 
+def insert_congress_trade(trade_data: Dict) -> Optional[int]:
+    """Insert a congressional trade. Returns ID or None if duplicate."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Create a unique ID from politician + ticker + date
+    external_id = f"{trade_data.get('politician_name', '')}_{trade_data.get('ticker', '')}_{trade_data.get('transaction_date', '')}"
+
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO congress_trades (
+                source, external_id, politician_name, politician_party,
+                politician_state, politician_chamber, ticker, company_name,
+                transaction_type, transaction_date, disclosure_date,
+                amount_range, amount_low, amount_high, asset_type,
+                virality_score, days_to_disclose, suspicious_timing
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            trade_data.get('source', 'capitol_trades'),
+            external_id,
+            trade_data.get('politician_name'),
+            trade_data.get('politician_party'),
+            trade_data.get('politician_state'),
+            trade_data.get('politician_chamber'),
+            trade_data.get('ticker'),
+            trade_data.get('company_name'),
+            trade_data.get('transaction_type'),
+            trade_data.get('transaction_date'),
+            trade_data.get('disclosure_date'),
+            trade_data.get('amount_range'),
+            trade_data.get('amount_low', 0),
+            trade_data.get('amount_high', 0),
+            trade_data.get('asset_type'),
+            trade_data.get('virality_score', 0),
+            trade_data.get('days_to_disclose', 0),
+            trade_data.get('suspicious_timing', 0),
+        ))
+        conn.commit()
+        return cursor.lastrowid if cursor.rowcount > 0 else None
+    except Exception as e:
+        print(f"Error inserting congress trade: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def insert_hedge_fund_filing(filing_data: Dict) -> Optional[int]:
+    """Insert a 13F filing. Returns ID or None if duplicate."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO hedge_fund_filings (
+                accession_number, filing_date, report_date,
+                fund_name, fund_cik, manager_name,
+                new_positions, increased_positions, decreased_positions, exited_positions,
+                total_value, position_count, virality_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            filing_data.get('accession_number'),
+            filing_data.get('filing_date'),
+            filing_data.get('report_date'),
+            filing_data.get('fund_name'),
+            filing_data.get('fund_cik'),
+            filing_data.get('manager_name'),
+            json.dumps(filing_data.get('new_positions', [])),
+            json.dumps(filing_data.get('increased_positions', [])),
+            json.dumps(filing_data.get('decreased_positions', [])),
+            json.dumps(filing_data.get('exited_positions', [])),
+            filing_data.get('total_value', 0),
+            filing_data.get('position_count', 0),
+            filing_data.get('virality_score', 0),
+        ))
+        conn.commit()
+        return cursor.lastrowid if cursor.rowcount > 0 else None
+    except Exception as e:
+        print(f"Error inserting 13F filing: {e}")
+        return None
+    finally:
+        conn.close()
+
+
 def get_unposted_trades(platform: str = 'twitter', limit: int = 50) -> List[Dict]:
     """Get trades that haven't been posted yet."""
     conn = get_connection()

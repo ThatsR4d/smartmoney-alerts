@@ -16,7 +16,10 @@ import logging
 # Ensure project root is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.database import init_db, insert_insider_trade, get_unposted_trades, get_stats_summary, mark_trade_posted
+from core.database import (
+    init_db, insert_insider_trade, insert_congress_trade, insert_hedge_fund_filing,
+    get_unposted_trades, get_stats_summary, mark_trade_posted
+)
 from scrapers.sec_form4 import SECForm4Scraper
 from scrapers.congress import scrape_congress_trades
 from scrapers.hedge_funds import scrape_hedge_fund_filings
@@ -121,19 +124,25 @@ def scrape_and_process() -> dict:
             congress_trades = scrape_congress_trades(max_trades=MAX_CONGRESS_TRADES)
             logger.info(f"Scraped {len(congress_trades)} congressional trades")
 
+            inserted_count = 0
             for trade in congress_trades:
                 trade['trade_type'] = 'congress'
-                results['congress_trades'].append(trade)
+                # Insert into database
+                trade_id = insert_congress_trade(trade)
+                if trade_id:
+                    trade['id'] = trade_id
+                    results['congress_trades'].append(trade)
+                    inserted_count += 1
 
-                if trade.get('virality_score', 0) >= 50:
-                    logger.info(
-                        f"  Congress: {trade.get('politician_name', 'Unknown')} - "
-                        f"${trade.get('ticker', 'N/A')} - "
-                        f"{trade.get('amount_range', '')} - "
-                        f"Score: {trade.get('virality_score', 0)}"
-                    )
+                    if trade.get('virality_score', 0) >= 50:
+                        logger.info(
+                            f"  Congress: {trade.get('politician_name', 'Unknown')} - "
+                            f"${trade.get('ticker', 'N/A')} - "
+                            f"{trade.get('amount_range', '')} - "
+                            f"Score: {trade.get('virality_score', 0)}"
+                        )
 
-            logger.info(f"Found {len(results['congress_trades'])} congressional trades")
+            logger.info(f"Inserted {inserted_count} new congressional trades")
         except Exception as e:
             logger.error(f"Error scraping congress trades: {e}")
 
@@ -144,18 +153,24 @@ def scrape_and_process() -> dict:
             filings = scrape_hedge_fund_filings(max_filings=MAX_13F_FILINGS)
             logger.info(f"Scraped {len(filings)} 13F filings")
 
+            inserted_count = 0
             for filing in filings:
                 filing['trade_type'] = '13f'
-                results['hedge_fund_filings'].append(filing)
+                # Insert into database
+                filing_id = insert_hedge_fund_filing(filing)
+                if filing_id:
+                    filing['id'] = filing_id
+                    results['hedge_fund_filings'].append(filing)
+                    inserted_count += 1
 
-                if filing.get('is_famous') or filing.get('virality_score', 0) >= 50:
-                    logger.info(
-                        f"  13F: {filing.get('fund_name', 'Unknown')[:30]} - "
-                        f"${filing.get('total_value', 0)/1e9:.1f}B - "
-                        f"Score: {filing.get('virality_score', 0)}"
-                    )
+                    if filing.get('is_famous') or filing.get('virality_score', 0) >= 50:
+                        logger.info(
+                            f"  13F: {filing.get('fund_name', 'Unknown')[:30]} - "
+                            f"${filing.get('total_value', 0)/1e9:.1f}B - "
+                            f"Score: {filing.get('virality_score', 0)}"
+                        )
 
-            logger.info(f"Found {len(results['hedge_fund_filings'])} 13F filings")
+            logger.info(f"Inserted {inserted_count} new 13F filings")
         except Exception as e:
             logger.error(f"Error scraping 13F filings: {e}")
 
