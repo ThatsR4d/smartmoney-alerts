@@ -67,3 +67,7 @@ htmlcov/
 *.bak
 *.tmp
 .cache/
+
+# Browser automation
+bots/.twitter_session/
+bots/.screenshots/

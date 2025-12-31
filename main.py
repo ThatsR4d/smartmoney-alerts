@@ -27,8 +27,35 @@ from bots.twitter_bot import twitter_bot
 from bots.discord_bot import discord_poster, post_to_discord_sync
 from config.settings import (
     SCRAPE_INTERVAL_MINUTES, DRY_RUN,
-    MAX_FORM4_FILINGS, MAX_CONGRESS_TRADES, MAX_13F_FILINGS
+    MAX_FORM4_FILINGS, MAX_CONGRESS_TRADES, MAX_13F_FILINGS,
+    TWITTER_MODE
 )
+
+# Browser automation for Twitter (when API not available)
+if TWITTER_MODE == "browser":
+    try:
+        from bots.twitter_browser import post_tweet_sync, post_trade_sync
+        BROWSER_BOT_AVAILABLE = True
+    except ImportError:
+        BROWSER_BOT_AVAILABLE = False
+else:
+    BROWSER_BOT_AVAILABLE = False
+
+
+def post_to_twitter(text: str = None, trade: dict = None) -> str:
+    """Post to Twitter using configured method (API or browser)."""
+    if TWITTER_MODE == "browser" and BROWSER_BOT_AVAILABLE:
+        if trade:
+            return post_trade_sync(trade)
+        elif text:
+            return post_tweet_sync(text)
+    else:
+        # Fall back to API
+        if trade:
+            return twitter_bot.post_trade(trade)
+        elif text:
+            return twitter_bot.post_text(text)
+    return None
 
 # Try to import schedule
 try:
@@ -149,7 +176,7 @@ def post_all_alerts(results: dict):
     for trade in results.get('insider_trades', []):
         tier = trade.get('tier', 4)
         if tier <= 2:
-            tweet_id = twitter_bot.post_trade(trade)
+            tweet_id = post_to_twitter(trade=trade)
             if tweet_id:
                 posted_count += 1
             post_to_discord_sync(trade)
@@ -160,7 +187,7 @@ def post_all_alerts(results: dict):
         tier = trade.get('tier', 4)
         if tier <= 2:
             formatted = tweet_formatter.format_congress_trade(trade)
-            tweet_id = twitter_bot.post_text(formatted['text'])
+            tweet_id = post_to_twitter(text=formatted['text'])
             if tweet_id:
                 posted_count += 1
             time.sleep(30)
@@ -169,7 +196,7 @@ def post_all_alerts(results: dict):
     for filing in results.get('hedge_fund_filings', []):
         if filing.get('is_famous') or filing.get('virality_score', 0) >= 60:
             formatted = tweet_formatter.format_hedge_fund_filing(filing)
-            tweet_id = twitter_bot.post_text(formatted['text'])
+            tweet_id = post_to_twitter(text=formatted['text'])
             if tweet_id:
                 posted_count += 1
             time.sleep(30)
@@ -198,8 +225,8 @@ def post_alerts():
                 f"(score: {score}) - {get_tier_description(tier)}"
             )
 
-            # Post to Twitter
-            tweet_id = twitter_bot.post_trade(trade)
+            # Post to Twitter (uses browser or API based on config)
+            tweet_id = post_to_twitter(trade=trade)
             if tweet_id:
                 posted_count += 1
 
@@ -292,13 +319,24 @@ def show_status():
 
     # Twitter status
     print("\n🐦 Twitter Bot:")
-    twitter_status = twitter_bot.get_status()
-    for key, value in twitter_status.items():
-        print(f"  {key}: {value}")
+    print(f"  Mode: {TWITTER_MODE}")
+    if TWITTER_MODE == "browser":
+        if BROWSER_BOT_AVAILABLE:
+            from bots.twitter_browser import twitter_browser
+            browser_status = twitter_browser.get_status()
+            for key, value in browser_status.items():
+                print(f"  {key}: {value}")
+        else:
+            print("  Browser bot not available - run: python main.py --setup-twitter")
+    else:
+        twitter_status = twitter_bot.get_status()
+        for key, value in twitter_status.items():
+            print(f"  {key}: {value}")
 
     # Configuration
     print("\n⚙️ Configuration:")
     print(f"  Scrape interval: {SCRAPE_INTERVAL_MINUTES} minutes")
+    print(f"  Twitter mode: {TWITTER_MODE}")
     print(f"  Dry run: {DRY_RUN}")
 
     print("\n" + "=" * 60)
@@ -315,13 +353,20 @@ def main():
     parser.add_argument('--daemon', action='store_true', help='Run as daemon (scheduled)')
     parser.add_argument('--init-db', action='store_true', help='Initialize database only')
     parser.add_argument('--status', action='store_true', help='Show system status')
+    parser.add_argument('--setup-twitter', action='store_true', help='Setup Twitter browser login')
 
     args = parser.parse_args()
 
     # Initialize database (always ensure it exists)
     init_db()
 
-    if args.status:
+    if args.setup_twitter:
+        # Run browser setup for Twitter
+        import asyncio
+        from bots.twitter_browser import setup_cli
+        asyncio.run(setup_cli())
+        return
+    elif args.status:
         show_status()
     elif args.init_db:
         print("Database initialized successfully.")
@@ -337,11 +382,12 @@ def main():
         # Default: show help
         parser.print_help()
         print("\nExamples:")
-        print("  python main.py --once      # Run full pipeline once")
-        print("  python main.py --daemon    # Run continuously")
-        print("  python main.py --scrape    # Scrape only (no posting)")
-        print("  python main.py --post      # Post pending alerts")
-        print("  python main.py --status    # Show system status")
+        print("  python main.py --setup-twitter  # Login to Twitter (first time)")
+        print("  python main.py --once           # Run full pipeline once")
+        print("  python main.py --daemon         # Run continuously")
+        print("  python main.py --scrape         # Scrape only (no posting)")
+        print("  python main.py --post           # Post pending alerts")
+        print("  python main.py --status         # Show system status")
 
 
 if __name__ == "__main__":

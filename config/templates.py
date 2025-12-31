@@ -6,48 +6,54 @@ Use {placeholders} for dynamic content.
 # === INSIDER TRADING TEMPLATES ===
 
 INSIDER_TIER1_TEMPLATES = [
-    """🚨 BREAKING: ${ticker} {insider_role} {insider_name} just made a MASSIVE buy
+    """🚨 INSIDER {action}: ${ticker} ({company_name})
 
-💰 Bought: {shares:,} shares
-💵 Value: ${value_display}
+{insider_role} {insider_name} just {action_past} {shares:,} shares
+
+💰 Value: ${value_display}
+💵 Price: ${price_display}/share
 📅 Filed: {time_ago}
 
 {anomaly_text}
 
 {insight_text}
 
-{tags}""",
+#InsiderTrading #{ticker_clean} {tags}""",
 
-    """🔥 INSIDER ALERT: ${ticker}
+    """🔥 MAJOR INSIDER {action}: ${ticker}
 
-{insider_role} just bought ${value_display} worth of stock
+{company_name}
 
-This is {anomaly_text}
-
-{insight_text}
-
-What does {insider_name} know? 👀
-
-{tags}""",
-
-    """🚨 ${ticker} {insider_role} BUYING
-
-{insider_name} just filed:
-→ {shares:,} shares purchased
-→ ${value_display} total value
-→ {time_ago}
+{insider_role} {action_past} ${value_display} worth of stock
 
 {anomaly_text}
 
 {insight_text}
 
-{tags}""",
+What does {insider_name} know? 👀
+
+#{ticker_clean} #SmartMoney {tags}""",
+
+    """🚨 ${ticker} — {company_name}
+
+{insider_role} {insider_name} just filed:
+→ {action}: {shares:,} shares
+→ Value: ${value_display}
+→ Price: ${price_display}/share
+
+{anomaly_text}
+
+{insight_text}
+
+#InsiderTrading #{ticker_clean} {tags}""",
 ]
 
 INSIDER_TIER2_TEMPLATES = [
-    """🔔 INSIDER BUY: ${ticker}
+    """🔔 INSIDER {action}: ${ticker}
 
-{insider_role} {insider_name} purchased {shares:,} shares (${value_display})
+{company_name}
+
+{insider_role} {insider_name} {action_past} {shares:,} shares (${value_display})
 
 {anomaly_text}
 
@@ -55,40 +61,73 @@ Filed {time_ago}
 
 #InsiderTrading #{ticker_clean}""",
 
-    """📊 ${ticker} — Insider Activity
+    """📊 ${ticker} — {company_name}
 
-{insider_role} bought ${value_display}
+Insider {action}:
+• {insider_role}: {insider_name}
+• Shares: {shares:,}
+• Value: ${value_display}
 
 {anomaly_text}
-
-{insight_text}
 
 #SmartMoney #{ticker_clean}""",
 ]
 
 INSIDER_TIER3_TEMPLATES = [
-    """📈 ${ticker}: {insider_role} bought {shares:,} shares (${value_display})
+    """📈 ${ticker} ({company_name}): {insider_role} {action_past} {shares:,} shares (${value_display})
 
 {anomaly_text}
 
-#InsiderBuying""",
+#InsiderTrading""",
 ]
 
-DAILY_ROUNDUP_TEMPLATE = """📋 Today's Top Insider Buys:
+# === SELL TEMPLATES ===
+
+INSIDER_SELL_TIER1_TEMPLATES = [
+    """⚠️ INSIDER SALE: ${ticker} ({company_name})
+
+{insider_role} {insider_name} just SOLD {shares:,} shares
+
+💰 Value: ${value_display}
+💵 Price: ${price_display}/share
+📅 Filed: {time_ago}
+
+{anomaly_text}
+
+Why is {insider_name} selling? 🤔
+
+#InsiderSelling #{ticker_clean} {tags}""",
+]
+
+INSIDER_SELL_TIER2_TEMPLATES = [
+    """🔔 INSIDER SALE: ${ticker}
+
+{company_name}
+
+{insider_role} {insider_name} sold {shares:,} shares (${value_display})
+
+{anomaly_text}
+
+Filed {time_ago}
+
+#InsiderSelling #{ticker_clean}""",
+]
+
+DAILY_ROUNDUP_TEMPLATE = """📋 Today's Top Insider Trades:
 
 {ranked_list}
 
-Total insider buying today: ${total_value}
+Total insider activity: ${total_value}
 
 Which one are you watching? 👇
 
-Full alerts: {link}
+{link}
 
 #InsiderTrading #SmartMoney"""
 
 # === CLUSTER BUY TEMPLATE ===
 
-CLUSTER_BUY_TEMPLATE = """👀 CLUSTER BUYING DETECTED: ${ticker}
+CLUSTER_BUY_TEMPLATE = """👀 CLUSTER BUYING: ${ticker} ({company_name})
 
 {count} insiders have bought in the past {days} days:
 
@@ -98,50 +137,56 @@ Total value: ${total_value}
 
 When multiple insiders buy together, pay attention 📈
 
-{tags}"""
+#ClusterBuying #{ticker_clean} {tags}"""
 
-# === CONGRESS TRADING TEMPLATES (Phase 2) ===
+# === CONGRESS TRADING TEMPLATES ===
 
 CONGRESS_TIER1_TEMPLATES = [
-    """🏛️ CONGRESS TRADE ALERT
+    """🏛️ CONGRESS TRADE: ${ticker}
 
-{politician_name} ({party}-{state}) just {action} ${ticker}
+{company_name}
+
+{politician_name} ({party}-{state}) {action}
 
 💰 Amount: {value_range}
-📅 Trade: {trade_date}
+📅 Trade Date: {trade_date}
 📅 Disclosed: {disclosure_date}
 
 {anomaly_text}
 
-Do they know something? 🤔
+What do they know? 🤔
 
-{tags}""",
+#CongressTrading #STOCKAct {tags}""",
 
-    """🚨 POLITICIAN STOCK TRADE
+    """🚨 POLITICIAN TRADE: ${ticker}
 
-{politician_name} {action} ${ticker}
+{company_name}
+
+{politician_name} ({party}) {action}
 
 Amount: {value_range}
 Chamber: {chamber}
 
 {anomaly_text}
 
-#CongressTrading #STOCKAct
-
-{tags}""",
+#CongressTrading #{ticker_clean} {tags}""",
 ]
 
 CONGRESS_TIER2_TEMPLATES = [
-    """🏛️ {politician_name} ({party}) {action} ${ticker}
+    """🏛️ {politician_name} ({party}-{state}) {action} ${ticker}
+
+{company_name}
 
 Amount: {value_range}
 Date: {trade_date}
 
 {anomaly_text}
 
-#CongressTrading""",
+#CongressTrading #{ticker_clean}""",
 
     """📊 Congress Trade: ${ticker}
+
+{company_name}
 
 {politician_name} ({party}-{state})
 {action}: {value_range}
@@ -152,7 +197,7 @@ Date: {trade_date}
 ]
 
 CONGRESS_TIER3_TEMPLATES = [
-    """🏛️ ${ticker}: {politician_name} ({party}) {action} {value_range}
+    """🏛️ ${ticker} ({company_name}): {politician_name} ({party}) {action} {value_range}
 
 #CongressTrading""",
 ]
@@ -165,16 +210,16 @@ TOP STOCKS BY CONGRESSIONAL PURCHASES:
 
 They're loading up on {top_sector}. Are you?
 
-Full data: {link}
+{link}
 
 #CongressTrading #STOCKAct"""
 
-# === HEDGE FUND 13F TEMPLATES (Phase 3) ===
+# === HEDGE FUND 13F TEMPLATES ===
 
 HEDGE_FUND_TIER1_TEMPLATES = [
-    """🚨 {manager_name} 13F FILING
+    """🚨 13F FILING: {manager_name}
 
-{fund_name} just disclosed Q{quarter} holdings:
+{fund_name} disclosed Q{quarter} holdings:
 
 💼 Portfolio: ${total_value}
 📊 Positions: {position_count}
@@ -184,17 +229,18 @@ Top Holdings:
 
 What's {manager_name} seeing? 🧐
 
-{tags}""",
+#13F #HedgeFund {tags}""",
 
-    """📈 HEDGE FUND ALERT: {manager_name}
+    """📈 HEDGE FUND ALERT: {fund_name}
 
-{fund_name} Q{quarter} 13F just dropped
+Manager: {manager_name}
+Q{quarter} 13F filed
 
-${total_value} portfolio across {position_count} positions
+${total_value} across {position_count} positions
 
 {anomaly_text}
 
-{tags}""",
+#13F #HedgeFund {tags}""",
 ]
 
 HEDGE_FUND_TIER2_TEMPLATES = [
@@ -218,22 +264,24 @@ HEDGE_FUND_TIER3_TEMPLATES = [
 # === ANOMALY TEXT SNIPPETS ===
 
 ANOMALY_TEXTS = {
-    "first_buy_in_years": "This is the FIRST insider buy at {company} since {last_buy_year}",
-    "largest_purchase": "This is the LARGEST insider purchase at {company} in {timeframe}",
-    "cluster_buy": "{count} insiders have bought this week",
-    "buy_during_crash": "Stock is DOWN {pct_down}% this month — insider buying the dip",
-    "pre_earnings": "Earnings in {days_to_earnings} days 👀",
-    "ceo_founder": "CEO/Founder buying = maximum conviction signal",
-    "first_purchase_ever": "This is {insider_name}'s FIRST EVER purchase",
-    "10x_normal": "This purchase is {multiple}x their average buy size",
+    "first_buy_in_years": "⚡ FIRST insider buy at {company} since {last_buy_year}",
+    "largest_purchase": "⚡ LARGEST insider purchase at {company} in {timeframe}",
+    "cluster_buy": "⚡ {count} insiders have bought this week",
+    "buy_during_crash": "⚡ Stock DOWN {pct_down}% this month — insider buying the dip",
+    "pre_earnings": "⚡ Earnings in {days_to_earnings} days 👀",
+    "ceo_founder": "⚡ CEO/Founder buying = maximum conviction",
+    "first_purchase_ever": "⚡ {insider_name}'s FIRST EVER purchase",
+    "10x_normal": "⚡ {multiple}x their average buy size",
+    "large_sale": "⚡ Significant insider selling activity",
 }
 
 INSIGHT_TEXTS = [
-    "Insiders are usually right. They know more than we do.",
+    "Insiders know more than we do.",
     "Follow the smart money.",
-    "When CEOs buy with their own money, pay attention.",
+    "When executives buy with their own money, pay attention.",
     "Insider buying often precedes positive news.",
     "This level of conviction is rare.",
+    "Insiders are rarely wrong.",
 ]
 
 

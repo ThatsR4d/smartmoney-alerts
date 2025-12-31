@@ -15,6 +15,8 @@ try:
         INSIDER_TIER1_TEMPLATES,
         INSIDER_TIER2_TEMPLATES,
         INSIDER_TIER3_TEMPLATES,
+        INSIDER_SELL_TIER1_TEMPLATES,
+        INSIDER_SELL_TIER2_TEMPLATES,
         DAILY_ROUNDUP_TEMPLATE,
         CLUSTER_BUY_TEMPLATE,
         CONGRESS_TIER1_TEMPLATES,
@@ -32,6 +34,8 @@ except ImportError:
         INSIDER_TIER1_TEMPLATES,
         INSIDER_TIER2_TEMPLATES,
         INSIDER_TIER3_TEMPLATES,
+        INSIDER_SELL_TIER1_TEMPLATES,
+        INSIDER_SELL_TIER2_TEMPLATES,
         DAILY_ROUNDUP_TEMPLATE,
         CLUSTER_BUY_TEMPLATE,
         CONGRESS_TIER1_TEMPLATES,
@@ -57,20 +61,50 @@ class TweetFormatter:
         """
         tier = trade.get('tier', 4)
         ticker = trade.get('ticker') or 'N/A'
+        transaction_type = trade.get('transaction_type', 'P')
+        is_sale = transaction_type == 'S'
 
-        # Select template based on tier
-        if tier == 1:
-            template = random.choice(INSIDER_TIER1_TEMPLATES)
-        elif tier == 2:
-            template = random.choice(INSIDER_TIER2_TEMPLATES)
+        # Select template based on tier and transaction type
+        if is_sale:
+            if tier <= 1:
+                template = random.choice(INSIDER_SELL_TIER1_TEMPLATES)
+            else:
+                template = random.choice(INSIDER_SELL_TIER2_TEMPLATES)
         else:
-            template = random.choice(INSIDER_TIER3_TEMPLATES)
+            if tier == 1:
+                template = random.choice(INSIDER_TIER1_TEMPLATES)
+            elif tier == 2:
+                template = random.choice(INSIDER_TIER2_TEMPLATES)
+            else:
+                template = random.choice(INSIDER_TIER3_TEMPLATES)
 
         # Prepare values
         value = trade.get('total_value', 0)
         value_display = self._format_value(value)
 
         shares = trade.get('shares', 0)
+        price = trade.get('price_per_share', 0)
+        price_display = f"{price:,.2f}" if price else "N/A"
+
+        # Company name - clean it up
+        company_name = trade.get('company_name', '')
+        if company_name:
+            # Remove common suffixes for cleaner display
+            for suffix in [', Inc.', ', Inc', ' Inc.', ' Inc', ' Corp.', ' Corp',
+                          ' LLC', ' Ltd.', ' Ltd', ' Co.', ' Co', ' Corporation',
+                          ' Holdings', ' Group', ' Technologies', ' Technology']:
+                if company_name.endswith(suffix):
+                    company_name = company_name[:-len(suffix)]
+                    break
+            # Truncate if still too long
+            if len(company_name) > 35:
+                company_name = company_name[:32] + '...'
+        else:
+            company_name = ticker  # Fallback to ticker
+
+        # Action text
+        action = 'SALE' if is_sale else 'BUY'
+        action_past = 'sold' if is_sale else 'bought'
 
         # Time ago
         filing_date = trade.get('filing_date')
@@ -85,7 +119,7 @@ class TweetFormatter:
             anomaly_text += f"\n{anomaly_texts[1]}"
 
         # Insight text
-        insight_text = get_random_insight() if tier <= 2 else ''
+        insight_text = get_random_insight() if tier <= 2 and not is_sale else ''
 
         # Tags
         tags = []
@@ -109,18 +143,23 @@ class TweetFormatter:
             text = template.format(
                 ticker=ticker,
                 ticker_clean=ticker_clean,
+                company_name=company_name,
                 insider_role=trade.get('insider_role', 'Insider'),
                 insider_name=insider_name,
                 shares=shares,
                 value_display=value_display,
+                price_display=price_display,
                 time_ago=time_ago,
+                action=action,
+                action_past=action_past,
                 anomaly_text=anomaly_text,
                 insight_text=insight_text,
                 tags=tags_text,
             )
         except KeyError as e:
             # Fallback if template has missing keys
-            text = f"🔔 ${ticker}: {trade.get('insider_role', 'Insider')} bought ${value_display}"
+            action_word = 'sold' if is_sale else 'bought'
+            text = f"🔔 ${ticker} ({company_name}): {trade.get('insider_role', 'Insider')} {action_word} ${value_display}"
 
         # Clean up extra whitespace
         text = self._clean_whitespace(text)
@@ -214,6 +253,17 @@ class TweetFormatter:
         state = trade.get('politician_state', '?')
         chamber = trade.get('politician_chamber', 'Congress')
 
+        # Company name
+        company_name = trade.get('company_name', '')
+        if not company_name:
+            company_name = trade.get('asset_description', ticker)
+        # Clean up
+        if company_name and len(company_name) > 35:
+            company_name = company_name[:32] + '...'
+
+        # Clean ticker for hashtag
+        ticker_clean = ticker.replace('.', '').replace('-', '') if ticker else ''
+
         # Action text
         tx_type = trade.get('transaction_type', '')
         if 'purchase' in tx_type.lower() or 'buy' in tx_type.lower():
@@ -221,7 +271,7 @@ class TweetFormatter:
         elif 'sale' in tx_type.lower() or 'sell' in tx_type.lower():
             action = 'SOLD'
         else:
-            action = tx_type.upper()
+            action = tx_type.upper() if tx_type else 'TRADED'
 
         # Dates
         trade_date = trade.get('transaction_date', 'N/A')
@@ -247,6 +297,8 @@ class TweetFormatter:
                 chamber=chamber,
                 action=action,
                 ticker=ticker,
+                ticker_clean=ticker_clean,
+                company_name=company_name,
                 value_range=trade.get('amount_range', 'Unknown'),
                 trade_date=trade_date,
                 disclosure_date=disclosure_date,
@@ -254,7 +306,7 @@ class TweetFormatter:
                 tags=tags_text,
             )
         except KeyError:
-            text = f"🏛️ {politician_name} ({party}) {action} ${ticker} - {trade.get('amount_range', '')}"
+            text = f"🏛️ {politician_name} ({party}) {action} ${ticker} ({company_name}) - {trade.get('amount_range', '')}"
 
         text = self._clean_whitespace(text)
         text = self._trim_to_length(text)
