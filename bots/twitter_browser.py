@@ -356,82 +356,77 @@ class TwitterBrowserBot:
                 logger.error("Could not find text input")
                 return None
 
-            await self._random_delay(1.5, 2.5)
+            await self._random_delay(2, 3)
 
             # Click the Post button - try multiple methods
-            post_button_selectors = [
-                '[data-testid="tweetButtonInline"]',
-                '[data-testid="tweetButton"]',
-                'button[data-testid="tweetButtonInline"]',
-                'button[data-testid="tweetButton"]',
-            ]
-
             posted = False
 
-            # Method 1: Try direct click on selectors
-            for selector in post_button_selectors:
-                try:
-                    button = await self.page.wait_for_selector(selector, timeout=3000)
-                    if button:
-                        # Check if button is enabled
-                        is_disabled = await button.get_attribute('aria-disabled')
-                        if is_disabled != 'true':
-                            # Scroll into view first
-                            await button.scroll_into_view_if_needed()
-                            await self._random_delay(0.3, 0.6)
-
-                            # Try regular click
-                            await button.click(force=True)
+            # Method 1: Find button and click with mouse
+            try:
+                logger.info("Method 1: Finding Post button...")
+                button = await self.page.wait_for_selector('[data-testid="tweetButtonInline"]', timeout=5000)
+                if button:
+                    is_disabled = await button.get_attribute('aria-disabled')
+                    if is_disabled != 'true':
+                        # Get button position and click with mouse
+                        box = await button.bounding_box()
+                        if box:
+                            x = box['x'] + box['width'] / 2
+                            y = box['y'] + box['height'] / 2
+                            logger.info(f"Clicking at ({x}, {y})")
+                            await self.page.mouse.click(x, y)
                             posted = True
-                            logger.info(f"Clicked post button via selector: {selector}")
-                            break
-                except Exception as e:
-                    logger.debug(f"Selector {selector} failed: {e}")
-                    continue
+                            logger.info("Posted via mouse click")
+            except Exception as e:
+                logger.warning(f"Method 1 failed: {e}")
 
-            # Method 2: Try JavaScript click as fallback
+            # Method 2: Force click
             if not posted:
                 try:
-                    logger.info("Trying JavaScript click fallback...")
-                    await self._random_delay(0.5, 1)
+                    logger.info("Method 2: Force click...")
+                    await self.page.click('[data-testid="tweetButtonInline"]', force=True, timeout=3000)
+                    posted = True
+                    logger.info("Posted via force click")
+                except Exception as e:
+                    logger.warning(f"Method 2 failed: {e}")
+
+            # Method 3: JavaScript with dispatchEvent
+            if not posted:
+                try:
+                    logger.info("Method 3: JavaScript dispatchEvent...")
                     result = await self.page.evaluate('''() => {
-                        // Try multiple ways to find the post button
-                        let btn = document.querySelector('[data-testid="tweetButtonInline"]');
-                        if (!btn) btn = document.querySelector('[data-testid="tweetButton"]');
-                        if (!btn) {
-                            // Find by text content
-                            const buttons = document.querySelectorAll('button');
-                            for (const b of buttons) {
-                                if (b.innerText === 'Post' && !b.disabled) {
-                                    btn = b;
-                                    break;
-                                }
+                        const btn = document.querySelector('[data-testid="tweetButtonInline"]') ||
+                                   document.querySelector('[data-testid="tweetButton"]');
+                        if (btn && btn.getAttribute('aria-disabled') !== 'true') {
+                            // Simulate real mouse events
+                            const events = ['mousedown', 'mouseup', 'click'];
+                            for (const eventType of events) {
+                                const event = new MouseEvent(eventType, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                });
+                                btn.dispatchEvent(event);
                             }
-                        }
-                        if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-                            btn.click();
                             return true;
                         }
                         return false;
                     }''')
                     if result:
                         posted = True
-                        logger.info("Posted via JavaScript click")
+                        logger.info("Posted via JavaScript dispatchEvent")
                 except Exception as e:
-                    logger.error(f"JavaScript click failed: {e}")
+                    logger.warning(f"Method 3 failed: {e}")
 
-            # Method 3: Try keyboard shortcut (Ctrl+Enter)
+            # Method 4: Ctrl+Enter
             if not posted:
                 try:
-                    logger.info("Trying keyboard shortcut (Ctrl+Enter)...")
-                    await self._random_delay(0.3, 0.6)
+                    logger.info("Method 4: Ctrl+Enter...")
                     await self.page.keyboard.press('Control+Enter')
-                    await self._random_delay(1, 2)
-                    # Check if we're still on compose (if not, it worked)
                     posted = True
                     logger.info("Posted via Ctrl+Enter")
                 except Exception as e:
-                    logger.error(f"Keyboard shortcut failed: {e}")
+                    logger.warning(f"Method 4 failed: {e}")
 
             if not posted:
                 logger.error("Could not click post button after all attempts")
@@ -504,12 +499,14 @@ twitter_browser = TwitterBrowserBot()
 
 # === SYNC WRAPPER FOR MAIN.PY ===
 def post_tweet_sync(text: str) -> Optional[str]:
-    """Synchronous wrapper for posting tweets."""
+    """Synchronous wrapper for posting tweets. Keeps browser open."""
     async def _post():
         if not twitter_browser.is_logged_in:
-            # Use headless=False since headless has issues with x.com
+            # Use headless=False and keep browser open
             await twitter_browser.start(headless=False)
-        return await twitter_browser.post_tweet(text)
+        result = await twitter_browser.post_tweet(text)
+        # Don't close browser - keep it open for next post
+        return result
 
     try:
         loop = asyncio.get_event_loop()
@@ -520,12 +517,14 @@ def post_tweet_sync(text: str) -> Optional[str]:
 
 
 def post_trade_sync(trade: Dict) -> Optional[str]:
-    """Synchronous wrapper for posting trades."""
+    """Synchronous wrapper for posting trades. Keeps browser open."""
     async def _post():
         if not twitter_browser.is_logged_in:
-            # Use headless=False since headless has issues with x.com
+            # Use headless=False and keep browser open
             await twitter_browser.start(headless=False)
-        return await twitter_browser.post_trade(trade)
+        result = await twitter_browser.post_trade(trade)
+        # Don't close browser - keep it open for next post
+        return result
 
     try:
         loop = asyncio.get_event_loop()
